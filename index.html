@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hospedagem CELU</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- jsPDF: generates PDF purely in JS — no DOM cloning needed -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:        #c62828;
+      --red-dark:   #8e0000;
+      --red-light:  #ffebee;
+      --ink:        #1a1a1a;
+      --muted:      #6b6b6b;
+      --border:     #e0e0e0;
+      --surface:    #ffffff;
+      --bg:         #f4f1ee;
+      --radius:     10px;
+      --shadow:     0 4px 24px rgba(0,0,0,0.08);
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      width: 100%;
+      max-width: 460px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      background: var(--red);
+      padding: 28px 32px 24px;
+      text-align: center;
+    }
+
+    .card-header h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.8rem;
+      color: #fff;
+      letter-spacing: 0.01em;
+    }
+
+    .card-header p {
+      color: rgba(255,255,255,0.75);
+      font-size: 0.85rem;
+      margin-top: 4px;
+    }
+
+    .card-body {
+      padding: 28px 32px 32px;
+    }
+
+    /* ── Form sections ── */
+    .section-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+      margin-top: 24px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title:first-child { margin-top: 0; }
+
+    /* ── Fields ── */
+    .field { margin-bottom: 14px; }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem;
+      color: var(--ink);
+      background: var(--surface);
+      transition: border-color 0.15s;
+      appearance: none;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--red);
+    }
+
+    textarea { resize: vertical; min-height: 72px; }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ── Checkbox ── */
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .checkbox-field:hover { border-color: var(--red); background: var(--red-light); }
+
+    .checkbox-field input[type="checkbox"] {
+      width: 17px;
+      height: 17px;
+      accent-color: var(--red);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .checkbox-field span {
+      font-size: 0.9rem;
+      color: var(--ink);
+      user-select: none;
+    }
+
+    /* ── Buttons ── */
+    .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 24px; }
+
+    .btn {
+      padding: 12px;
+      border: none;
+      border-radius: var(--radius);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary   { background: var(--red);       color: #fff; }
+    .btn-primary:hover { background: var(--red-dark); }
+
+    .btn-secondary { background: var(--red-light); color: var(--red); }
+    .btn-secondary:hover { background: #ffcdd2; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1a1a1a;
+      color: #fff;
+      padding: 12px 22px;
+      border-radius: 50px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      z-index: 1000;
+      white-space: nowrap;
+    }
+
+    #toast.show  { transform: translateX(-50%) translateY(0); }
+    #toast.error { background: var(--red); }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="card-header">
+    <h1>Hospedagem CELU</h1>
+    <p>Cadastro de Hóspede</p>
+  </div>
+
+  <div class="card-body">
+
+    <p class="section-title">Dados Pessoais</p>
+
+    <div class="field">
+      <label for="nome">Nome completo</label>
+      <input type="text" id="nome" placeholder="Nome do hóspede">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="cpf">CPF</label>
+        <input type="text" id="cpf" placeholder="000.000.000-00">
+      </div>
+      <div class="field">
+        <label for="contato">Contato</label>
+        <input type="text" id="contato" placeholder="(00) 00000-0000">
+      </div>
+    </div>
+
+    <p class="section-title">Estadia</p>
+
+    <div class="row">
+      <div class="field">
+        <label for="checkin">Check-in</label>
+        <input type="date" id="checkin">
+      </div>
+      <div class="field">
+        <label for="checkout">Check-out</label>
+        <input type="date" id="checkout">
+      </div>
+    </div>
+
+    <p class="section-title">Serviços</p>
+
+    <div class="field">
+      <label for="modalidade">Modalidade</label>
+      <select id="modalidade">
+        <option value="Misto - R$50">Misto — R$50</option>
+        <option value="Privativo - R$60">Privativo — R$60</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label class="checkbox-field">
+        <input type="checkbox" id="roupa">
+        <span>Roupa de cama <em>(+R$5)</em></span>
+      </label>
+    </div>
+
+    <div class="field">
+      <label for="pagamento">Forma de pagamento</label>
+      <select id="pagamento">
+        <option value="Pix">Pix</option>
+        <option value="Dinheiro">Dinheiro</option>
+        <option value="Cartão">Cartão</option>
+      </select>
+    </div>
+
+    <p class="section-title">Observações</p>
+
+    <div class="field">
+      <textarea id="obs" placeholder="Anotações adicionais sobre o hóspede ou a estadia..."></textarea>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary"   onclick="App.salvar()">Registrar</button>
+      <button class="btn btn-secondary" onclick="App.gerarPDF()">Gerar Ficha</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     APPLICATION SCRIPT
+     ─────────────────────────────────────────────────────────────────
+     Layers:
+       FormModel        — reads & validates form fields into a plain object
+       FirebaseService  — persists the plain object to Firestore
+       PdfService       — builds the PDF from the plain object via jsPDF
+                          (no hidden DOM elements, no html2canvas, no cloning)
+       App              — orchestrates the three layers
+     ═══════════════════════════════════════════════════════════════════ -->
+<script type="module">
+
+  // ── Firebase ────────────────────────────────────────────────────────
+  import { initializeApp }
+    from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+  import { getFirestore, addDoc, collection }
+    from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey:     "AIzaSyBpvwyRLFUFfjc6u7ZsoiSA3vRNrz1syXg",
+    authDomain: "bloqueto-caacd.firebaseapp.com",
+    projectId:  "bloqueto-caacd"
+  };
+
+  const db = getFirestore(initializeApp(firebaseConfig));
+
+
+  // ── Toast ────────────────────────────────────────────────────────────
+  const Toast = (() => {
+    const el = document.getElementById("toast");
+    let timer;
+    return {
+      show(msg, isError = false) {
+        el.textContent = msg;
+        el.className   = "show" + (isError ? " error" : "");
+        clearTimeout(timer);
+        timer = setTimeout(() => { el.className = ""; }, 3000);
+      }
+    };
+  })();
+
+
+  // ── FormModel ────────────────────────────────────────────────────────
+  // Responsibility: read the DOM once and return a plain data object,
+  // plus validate that object before it's handed off to any service.
+  const FormModel = {
+    read() {
+      const g = id => document.getElementById(id);
+      return {
+        nome:       g("nome").value.trim(),
+        cpf:        g("cpf").value.trim(),
+        contato:    g("contato").value.trim(),
+        checkin:    g("checkin").value,
+        checkout:   g("checkout").value,
+        modalidade: g("modalidade").value,
+        roupa:      g("roupa").checked,
+        pagamento:  g("pagamento").value,
+        obs:        g("obs").value.trim(),
+      };
+    },
+
+    validate(data) {
+      if (!data.nome)     return "Por favor, preencha o nome do hóspede.";
+      if (!data.checkin)  return "Por favor, informe a data de check-in.";
+      if (!data.checkout) return "Por favor, informe a data de check-out.";
+      if (data.checkout < data.checkin)
+        return "Check-out não pode ser anterior ao check-in.";
+      return null; // null = valid
+    }
+  };
+
+
+  // ── FirebaseService ──────────────────────────────────────────────────
+  // Responsibility: persist a guest data object to Firestore.
+  const FirebaseService = {
+    async save(data) {
+      await addDoc(collection(db, "hospedes"), data);
+    }
+  };
+
+
+  // ── PdfService ───────────────────────────────────────────────────────
+  // Responsibility: generate a downloadable PDF from a plain data object.
+  // Uses jsPDF's drawing API directly — zero DOM side-effects.
+  const PdfService = {
+    generate(data) {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+
+      // ── Palette
+      const RED   = [198, 40, 40];
+      const BLACK = [26, 26, 26];
+      const GRAY  = [107, 107, 107];
+      const W     = 210;   // A4 width in mm
+      const PAD   = 20;
+
+      // ── Header bar
+      doc.setFillColor(...RED);
+      doc.rect(0, 0, W, 30, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.setTextColor(255, 255, 255);
+      doc.text("Hospedagem CELU", W / 2, 13, { align: "center" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text("Ficha de Hóspede", W / 2, 21, { align: "center" });
+
+      let y = 42;
+
+      // ── Helpers
+      const section = (title) => {
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...GRAY);
+        doc.text(title.toUpperCase(), PAD, y);
+        doc.setDrawColor(...RED);
+        doc.setLineWidth(0.4);
+        doc.line(PAD, y + 2, W - PAD, y + 2);
+        y += 10;
+      };
+
+      const row = (label, value) => {
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(...GRAY);
+        doc.text(label + ":", PAD, y);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...BLACK);
+        doc.text(value || "—", PAD + 38, y);
+        y += 8;
+      };
+
+      // ── Sections
+      section("Dados Pessoais");
+      row("Nome",    data.nome);
+      row("CPF",     data.cpf);
+      row("Contato", data.contato);
+      y += 4;
+
+      section("Estadia");
+      row("Check-in",  this._fmtDate(data.checkin));
+      row("Check-out", this._fmtDate(data.checkout));
+      y += 4;
+
+      section("Serviços");
+      row("Modalidade",    data.modalidade);
+      row("Roupa de cama", data.roupa ? "Sim (+R$5)" : "Não");
+      row("Pagamento",     data.pagamento);
+      y += 4;
+
+      section("Observações");
+      if (data.obs) {
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...BLACK);
+        const lines = doc.splitTextToSize(data.obs, W - PAD * 2);
+        doc.text(lines, PAD, y);
+        y += lines.length * 6 + 4;
+      } else {
+        row("", "Nenhuma observação.");
+      }
+
+      // ── Signature line
+      y += 14;
+      doc.setDrawColor(...GRAY);
+      doc.setLineWidth(0.3);
+      doc.line(PAD, y, PAD + 70, y);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...GRAY);
+      doc.text("Assinatura do Hóspede", PAD, y + 5);
+
+      // ── Footer
+      doc.setFontSize(8);
+      doc.setTextColor(...GRAY);
+      doc.text(
+        `Gerado em ${new Date().toLocaleDateString("pt-BR")}`,
+        W / 2, 285, { align: "center" }
+      );
+
+      doc.save("ficha-hospede.pdf");
+    },
+
+    _fmtDate(iso) {
+      if (!iso) return "—";
+      const [y, m, d] = iso.split("-");
+      return `${d}/${m}/${y}`;
+    }
+  };
+
+
+  // ── App ──────────────────────────────────────────────────────────────
+  // Responsibility: orchestrate the three layers above.
+  const App = {
+    async salvar() {
+      const data  = FormModel.read();
+      const error = FormModel.validate(data);
+      if (error) { Toast.show(error, true); return; }
+
+      try {
+        await FirebaseService.save(data);
+        Toast.show("Hóspede registrado com sucesso!");
+      } catch (e) {
+        console.error(e);
+        Toast.show("Erro ao registrar. Tente novamente.", true);
+      }
+    },
+
+    gerarPDF() {
+      const data  = FormModel.read();
+      const error = FormModel.validate(data);
+      if (error) { Toast.show(error, true); return; }
+
+      PdfService.generate(data);
+    }
+  };
+
+  // Expose to global scope for inline onclick handlers
+  window.App = App;
+
+</script>
+</body>
+</html>
