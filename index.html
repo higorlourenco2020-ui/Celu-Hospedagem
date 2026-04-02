@@ -173,6 +173,39 @@
     .btn-secondary { background: var(--red-light); color: var(--red); }
     .btn-secondary:hover { background: #ffcdd2; }
 
+    /* ── Cost Summary ── */
+    .cost-box {
+      background: var(--red-light);
+      border: 1.5px solid #ffcdd2;
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-top: 4px;
+    }
+
+    .cost-box.hidden { display: none; }
+
+    .cost-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.875rem;
+      color: var(--muted);
+      padding: 3px 0;
+    }
+
+    .cost-line.total {
+      border-top: 1px solid #ffcdd2;
+      margin-top: 8px;
+      padding-top: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--red);
+    }
+
+    .cost-line.total span:last-child {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.15rem;
+    }
+
     /* ── Toast ── */
     #toast {
       position: fixed;
@@ -261,6 +294,23 @@
       </select>
     </div>
 
+    <p class="section-title">Resumo do Custo</p>
+
+    <div id="cost-box" class="cost-box hidden">
+      <div class="cost-line">
+        <span id="cost-label-nights">—</span>
+        <span id="cost-val-nights">—</span>
+      </div>
+      <div class="cost-line" id="cost-row-roupa" style="display:none">
+        <span>Roupa de cama</span>
+        <span>R$ 5,00</span>
+      </div>
+      <div class="cost-line total">
+        <span>Total estimado</span>
+        <span id="cost-val-total">—</span>
+      </div>
+    </div>
+
     <p class="section-title">Observações</p>
 
     <div class="field">
@@ -319,13 +369,96 @@
   })();
 
 
+  // ── InputMask ────────────────────────────────────────────────────────
+  // Responsibility: format CPF and phone fields as the user types.
+  const InputMask = {
+    _apply(el, formatter) {
+      el.addEventListener("input", () => {
+        const before = el.value.length - el.selectionEnd;
+        el.value = formatter(el.value);
+        const pos = Math.max(0, el.value.length - before);
+        el.setSelectionRange(pos, pos);
+      });
+    },
+
+    cpf(raw) {
+      const d = raw.replace(/\D/g, "").slice(0, 11);
+      if (d.length <= 3) return d;
+      if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`;
+      if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
+      return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+    },
+
+    phone(raw) {
+      const d = raw.replace(/\D/g, "").slice(0, 11);
+      if (d.length <= 2)  return d.length ? `(${d}` : "";
+      if (d.length <= 6)  return `(${d.slice(0,2)}) ${d.slice(2)}`;
+      const split = d.length === 11 ? 7 : 6;
+      return `(${d.slice(0,2)}) ${d.slice(2,split)}-${d.slice(split)}`;
+    },
+
+    init() {
+      this._apply(document.getElementById("cpf"),     (v) => this.cpf(v));
+      this._apply(document.getElementById("contato"), (v) => this.phone(v));
+    }
+  };
+
+  InputMask.init();
+
+
+  // ── CostModel ────────────────────────────────────────────────────────
+  // Responsibility: derive cost breakdown from a plain data object.
+  const PRICES = { "Misto - R$50": 50, "Privativo - R$60": 60 };
+
+  const CostModel = {
+    compute(data) {
+      const nights = data.checkin && data.checkout
+        ? Math.max(0, (new Date(data.checkout) - new Date(data.checkin)) / 86_400_000)
+        : 0;
+      const ratePerNight  = PRICES[data.modalidade] ?? 50;
+      const accommodation = nights * ratePerNight;
+      const linen         = data.roupa ? 5 : 0;
+      return { nights, ratePerNight, accommodation, linen, total: accommodation + linen };
+    }
+  };
+
+
+  // ── CostView ─────────────────────────────────────────────────────────
+  // Responsibility: render the cost breakdown in the UI reactively.
+  const CostView = {
+    _fmt: (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+
+    update(data) {
+      const { nights, ratePerNight, accommodation, linen, total } = CostModel.compute(data);
+      const box = document.getElementById("cost-box");
+
+      if (nights === 0) { box.classList.add("hidden"); return; }
+
+      box.classList.remove("hidden");
+      document.getElementById("cost-label-nights").textContent =
+        `${nights} diária${nights > 1 ? "s" : ""} × ${this._fmt(ratePerNight)}`;
+      document.getElementById("cost-val-nights").textContent  = this._fmt(accommodation);
+      document.getElementById("cost-row-roupa").style.display = linen ? "flex" : "none";
+      document.getElementById("cost-val-total").textContent   = this._fmt(total);
+    }
+  };
+
+
+  // ── Reactive wiring ──────────────────────────────────────────────────
+  ["checkin", "checkout", "modalidade", "roupa"].forEach(id => {
+    document.getElementById(id).addEventListener("change", () => {
+      CostView.update(FormModel.read());
+    });
+  });
+
+
   // ── FormModel ────────────────────────────────────────────────────────
   // Responsibility: read the DOM once and return a plain data object,
   // plus validate that object before it's handed off to any service.
   const FormModel = {
     read() {
       const g = id => document.getElementById(id);
-      return {
+      const data = {
         nome:       g("nome").value.trim(),
         cpf:        g("cpf").value.trim(),
         contato:    g("contato").value.trim(),
@@ -336,6 +469,10 @@
         pagamento:  g("pagamento").value,
         obs:        g("obs").value.trim(),
       };
+      const { nights, total } = CostModel.compute(data);
+      data.noites = nights;
+      data.totalEstimado = total;
+      return data;
     },
 
     validate(data) {
@@ -426,6 +563,27 @@
       row("Roupa de cama", data.roupa ? "Sim (+R$5)" : "Não");
       row("Pagamento",     data.pagamento);
       y += 4;
+
+      // ── Cost breakdown
+      const cost   = CostModel.compute(data);
+      const fmtBRL = (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+      section("Resumo do Custo");
+      row(
+        `${cost.nights} diária${cost.nights > 1 ? "s" : ""} × ${fmtBRL(cost.ratePerNight)}`,
+        fmtBRL(cost.accommodation)
+      );
+      if (cost.linen) row("Roupa de cama", fmtBRL(cost.linen));
+
+      // Highlighted total row
+      doc.setFillColor(255, 235, 238);
+      doc.roundedRect(PAD - 2, y - 5, W - PAD * 2 + 4, 11, 2, 2, "F");
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...RED);
+      doc.text("Total estimado:", PAD, y);
+      doc.text(fmtBRL(cost.total), W - PAD, y, { align: "right" });
+      y += 14;
 
       section("Observações");
       if (data.obs) {
