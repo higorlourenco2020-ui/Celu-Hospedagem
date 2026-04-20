@@ -1087,12 +1087,12 @@
       y += 4;
 
       section("Resumo do Custo");
-      const pessoas = Math.max(1, parseInt(data.numPessoas) || 1);
-      const nightsLabel = pessoas > 1
-        ? `${cost.nights} diária${cost.nights > 1 ? "s" : ""} × ${fmtBRL(cost.ratePerNight)} × ${pessoas} pessoas`
+      const numPessoas = Math.max(1, parseInt(data.numPessoas) || 1);
+      const nightsLabel = numPessoas > 1
+        ? `${cost.nights} diária${cost.nights > 1 ? "s" : ""} × ${fmtBRL(cost.ratePerNight)} × ${numPessoas} pessoas`
         : `${cost.nights} diária${cost.nights > 1 ? "s" : ""} × ${fmtBRL(cost.ratePerNight)}`;
       row(nightsLabel, fmtBRL(cost.accommodation));
-      if (cost.linen) row("Roupa de cama", `${pessoas}× R$5,00 = ${fmtBRL(cost.linen)}`);
+      if (cost.linen) row("Roupa de cama", `${numPessoas}× R$5,00 = ${fmtBRL(cost.linen)}`);
       if (cost.discount > 0) {
         const dTipo  = data.descontoTipo;
         const dVal   = parseFloat(String(data.descontoValor || "0").replace(",", ".")) || 0;
