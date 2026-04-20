@@ -214,6 +214,64 @@
       font-size: 1.15rem;
     }
 
+    /* ── Person cards ── */
+    .person-card {
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 14px 6px;
+      margin-bottom: 12px;
+      position: relative;
+      background: var(--surface);
+      transition: border-color 0.15s;
+    }
+    .person-card:focus-within {
+      border-color: var(--red);
+    }
+    .person-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .person-card-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--red);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .btn-remove-person {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .btn-remove-person:hover { color: var(--red); background: var(--red-light); }
+    .btn-add-person {
+      width: 100%;
+      padding: 10px;
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      background: none;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      margin-top: 4px;
+    }
+    .btn-add-person:hover {
+      border-color: var(--red);
+      color: var(--red);
+      background: var(--red-light);
+    }
+
     /* ── Discount ── */
     .discount-row {
       display: grid;
@@ -339,26 +397,10 @@
 
     <p class="section-title">Dados Pessoais</p>
 
-    <div class="field">
-      <label for="nome">Nome completo</label>
-      <input type="text" id="nome" placeholder="Nome do hóspede">
+    <div id="pessoas-container">
+      <!-- Person cards injected by JS -->
     </div>
-    <div class="row">
-      <div class="field">
-        <label for="cpf">CPF</label>
-        <input type="text" id="cpf" placeholder="000.000.000-00">
-        <span class="field-hint" id="cpf-hint">CPF inválido</span>
-      </div>
-      <div class="field">
-        <label for="contato">Contato</label>
-        <input type="text" id="contato" placeholder="(00) 00000-0000">
-      </div>
-    </div>
-    <div class="field">
-      <label for="email">E-mail</label>
-      <input type="text" id="email" placeholder="hospede@exemplo.com">
-      <span class="field-hint" id="email-hint">E-mail inválido</span>
-    </div>
+    <button type="button" class="btn-add-person" onclick="App.adicionarPessoa()">+ Adicionar pessoa</button>
 
     <p class="section-title">Tipo de Reserva</p>
 
@@ -370,7 +412,7 @@
           <option value="Excursão">Excursão</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field" style="display:none">
         <label for="num-pessoas">Número de pessoas</label>
         <input type="number" id="num-pessoas" placeholder="1" value="1" min="1" max="999" step="1">
       </div>
@@ -380,11 +422,11 @@
 
     <div class="row">
       <div class="field">
-        <label for="checkin">Check-in</label>
+        <label for="checkin">Check-in <span style="color:var(--red)">*</span></label>
         <input type="date" id="checkin">
       </div>
       <div class="field">
-        <label for="checkout">Check-out</label>
+        <label for="checkout">Check-out <span style="color:var(--red)">*</span></label>
         <input type="date" id="checkout">
       </div>
     </div>
@@ -553,9 +595,9 @@
 
 
   // ── InputMask ────────────────────────────────────────────────────────
-  // Responsibility: format CPF and phone fields as the user types.
   const InputMask = {
     _apply(el, formatter) {
+      if (!el) return;
       el.addEventListener("input", () => {
         const before = el.value.length - el.selectionEnd;
         el.value = formatter(el.value);
@@ -577,12 +619,11 @@
       const split = d.length === 11 ? 7 : 6;
       return `(${d.slice(0,2)}) ${d.slice(2,split)}-${d.slice(split)}`;
     },
-    init() {
-      this._apply(document.getElementById("cpf"),     v => this.cpf(v));
-      this._apply(document.getElementById("contato"), v => this.phone(v));
+    applyToCard(card) {
+      this._apply(card.querySelector(".input-cpf"),     v => this.cpf(v));
+      this._apply(card.querySelector(".input-contato"), v => this.phone(v));
     }
   };
-  InputMask.init();
 
   // ── CPF Validator ────────────────────────────────────────────────────
   const CPFValidator = {
@@ -599,15 +640,136 @@
     }
   };
 
-  document.getElementById("cpf").addEventListener("blur", () => {
-    const el   = document.getElementById("cpf");
-    const hint = document.getElementById("cpf-hint");
-    const val  = el.value.trim();
-    if (!val) { el.classList.remove("invalid"); hint.classList.remove("visible"); return; }
-    const ok = CPFValidator.validate(val);
-    el.classList.toggle("invalid", !ok);
-    hint.classList.toggle("visible", !ok);
-  });
+  // ── PessoaManager ─────────────────────────────────────────────────────
+  let _pessoaCount = 0;
+
+  const PessoaManager = {
+    container: null,
+
+    init() {
+      this.container = document.getElementById("pessoas-container");
+      this.add();
+    },
+
+    add() {
+      _pessoaCount++;
+      const isFirst = this.container.children.length === 0;
+      const idx     = this.container.children.length; // 0-based position
+      const card    = document.createElement("div");
+      card.className = "person-card";
+      card.innerHTML = `
+        <div class="person-card-header">
+          <span class="person-card-title">${isFirst ? "Hóspede principal" : `Acompanhante ${idx}`}</span>
+          ${!isFirst ? `<button type="button" class="btn-remove-person" title="Remover" onclick="App.removerPessoa(this)">✕</button>` : ""}
+        </div>
+        <div class="field">
+          <label>Nome completo <span style="color:var(--red)">*</span></label>
+          <input type="text" class="input-nome" placeholder="Nome completo">
+          <span class="field-hint hint-nome">Campo obrigatório</span>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>CPF <span style="color:var(--red)">*</span></label>
+            <input type="text" class="input-cpf" placeholder="000.000.000-00">
+            <span class="field-hint hint-cpf">CPF inválido</span>
+          </div>
+          <div class="field">
+            <label>Contato</label>
+            <input type="text" class="input-contato" placeholder="(00) 00000-0000">
+          </div>
+        </div>
+        <div class="field">
+          <label>E-mail</label>
+          <input type="text" class="input-email" placeholder="hospede@exemplo.com">
+          <span class="field-hint hint-email">E-mail inválido</span>
+        </div>
+      `;
+      this.container.appendChild(card);
+      InputMask.applyToCard(card);
+      this._attachBlur(card);
+    },
+
+    _attachBlur(card) {
+      const nomeEl = card.querySelector(".input-nome");
+      const hNome  = card.querySelector(".hint-nome");
+      nomeEl.addEventListener("blur", () => {
+        const ok = nomeEl.value.trim().length > 0;
+        nomeEl.classList.toggle("invalid", !ok);
+        hNome.classList.toggle("visible", !ok);
+      });
+      nomeEl.addEventListener("input", () => {
+        if (nomeEl.value.trim()) { nomeEl.classList.remove("invalid"); hNome.classList.remove("visible"); }
+      });
+
+      const cpfEl = card.querySelector(".input-cpf");
+      const hCpf  = card.querySelector(".hint-cpf");
+      cpfEl.addEventListener("blur", () => {
+        const val = cpfEl.value.trim();
+        if (!val) { cpfEl.classList.add("invalid"); hCpf.textContent = "Campo obrigatório"; hCpf.classList.add("visible"); return; }
+        const ok = CPFValidator.validate(val);
+        hCpf.textContent = "CPF inválido";
+        cpfEl.classList.toggle("invalid", !ok);
+        hCpf.classList.toggle("visible", !ok);
+      });
+
+      const emailEl = card.querySelector(".input-email");
+      const hEmail  = card.querySelector(".hint-email");
+      emailEl.addEventListener("blur", () => {
+        const val = emailEl.value.trim();
+        if (!val) { emailEl.classList.remove("invalid"); hEmail.classList.remove("visible"); return; }
+        const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+        emailEl.classList.toggle("invalid", !ok);
+        hEmail.classList.toggle("visible", !ok);
+      });
+    },
+
+    remove(btn) {
+      btn.closest(".person-card").remove();
+      this._renumber();
+    },
+
+    _renumber() {
+      Array.from(this.container.querySelectorAll(".person-card")).forEach((c, i) => {
+        c.querySelector(".person-card-title").textContent =
+          i === 0 ? "Hóspede principal" : `Acompanhante ${i}`;
+      });
+    },
+
+    readAll() {
+      return Array.from(this.container.querySelectorAll(".person-card")).map(card => ({
+        nome:    card.querySelector(".input-nome").value.trim(),
+        cpf:     card.querySelector(".input-cpf").value.trim(),
+        contato: card.querySelector(".input-contato").value.trim(),
+        email:   card.querySelector(".input-email").value.trim(),
+      }));
+    },
+
+    validate() {
+      const list = this.readAll();
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
+        const who = i === 0 ? "do hóspede principal" : `do acompanhante ${i}`;
+        if (!p.nome)                        return `Preencha o nome ${who}.`;
+        if (!p.cpf)                         return `Preencha o CPF ${who}.`;
+        if (!CPFValidator.validate(p.cpf))  return `O CPF ${who} é inválido.`;
+        if (p.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email))
+                                            return `O e-mail ${who} é inválido.`;
+      }
+      return null;
+    },
+
+    resetAll() {
+      const cards = Array.from(this.container.querySelectorAll(".person-card"));
+      cards.forEach((c, i) => { if (i > 0) c.remove(); });
+      const first = this.container.querySelector(".person-card");
+      if (first) {
+        first.querySelectorAll("input").forEach(el => { el.value = ""; el.classList.remove("invalid"); });
+        first.querySelectorAll(".field-hint").forEach(el => el.classList.remove("visible"));
+      }
+    }
+  };
+
+
 
 
   // ── CostModel ────────────────────────────────────────────────────────
@@ -704,22 +866,26 @@
 
 
   // ── FormModel ────────────────────────────────────────────────────────
-  // Responsibility: read & validate form fields into a plain object.
   const FormModel = {
     read() {
       const g = id => document.getElementById(id);
+      const pessoas = PessoaManager.readAll();
+      const lead    = pessoas[0] || {};
       const data = {
-        nome:          g("nome").value.trim(),
-        cpf:           g("cpf").value.trim(),
-        contato:       g("contato").value.trim(),
-        email:         g("email").value.trim(),
+        // Lead person (primary guest) — kept flat for email/PDF compat
+        nome:          lead.nome    || "",
+        cpf:           lead.cpf     || "",
+        contato:       lead.contato || "",
+        email:         lead.email   || "",
+        // All persons array (for Firebase + PDF)
+        pessoas,
         checkin:       g("checkin").value,
         checkout:      g("checkout").value,
         modalidade:    g("modalidade").value,
         roupa:         g("roupa").checked,
         pagamento:     g("pagamento").value,
         tipoReserva:   g("tipo-reserva").value,
-        numPessoas:    g("num-pessoas").value.trim() || "1",
+        numPessoas:    String(pessoas.length),
         descontoTipo:  g("desconto-tipo").value,
         descontoValor: g("desconto-valor").value.trim(),
         obs:           g("obs").value.trim(),
@@ -733,14 +899,12 @@
     },
 
     validate(data) {
-      if (!data.nome)     return "Por favor, preencha o nome do hóspede.";
-      if (data.cpf && !CPFValidator.validate(data.cpf)) return "O CPF informado é inválido.";
+      const pessoaErr = PessoaManager.validate();
+      if (pessoaErr) return pessoaErr;
       if (!data.checkin)  return "Por favor, informe a data de check-in.";
       if (!data.checkout) return "Por favor, informe a data de check-out.";
       if (data.checkout <= data.checkin)
         return "O check-out deve ser pelo menos um dia após o check-in.";
-      if (data.email && !this._validEmail(data.email))
-        return "O e-mail informado é inválido.";
       if (!data.responsavel) return "Por favor, informe o responsável pelo check-in.";
       return null;
     },
@@ -750,41 +914,22 @@
     },
 
     reset() {
-      ["nome","cpf","contato","email","obs","responsavel","desconto-valor"].forEach(id => {
-        document.getElementById(id).value = "";
-      });
-      document.getElementById("num-pessoas").value = "1";
-      document.getElementById("tipo-reserva").selectedIndex = 0;
-      ["checkin","checkout"].forEach(id => {
-        document.getElementById(id).value = "";
-      });
-      document.getElementById("modalidade").selectedIndex = 0;
-      document.getElementById("roupa").checked = false;
-      document.getElementById("pagamento").selectedIndex = 0;
-      document.getElementById("desconto-tipo").selectedIndex = 0;
-      document.getElementById("desconto-valor-field").style.display = "none";
-      document.getElementById("cost-box").classList.add("hidden");
-      // Clear any validation states
-      ["email", "cpf", "responsavel"].forEach(id => {
-        document.getElementById(id).classList.remove("invalid");
-      });
-      ["email-hint", "cpf-hint", "responsavel-hint"].forEach(id => {
-        document.getElementById(id).classList.remove("visible");
-      });
+      PessoaManager.resetAll();
+      const g = id => document.getElementById(id);
+      ["obs","responsavel","desconto-valor"].forEach(id => { g(id).value = ""; });
+      g("num-pessoas").value = "1";
+      g("tipo-reserva").selectedIndex = 0;
+      ["checkin","checkout"].forEach(id => { g(id).value = ""; });
+      g("modalidade").selectedIndex = 0;
+      g("roupa").checked = false;
+      g("pagamento").selectedIndex = 0;
+      g("desconto-tipo").selectedIndex = 0;
+      g("desconto-valor-field").style.display = "none";
+      g("cost-box").classList.add("hidden");
+      ["responsavel"].forEach(id => { g(id).classList.remove("invalid"); });
+      ["responsavel-hint"].forEach(id => { g(id).classList.remove("visible"); });
     }
   };
-
-  // Live e-mail validation on blur
-  document.getElementById("email").addEventListener("blur", () => {
-    const el   = document.getElementById("email");
-    const hint = document.getElementById("email-hint");
-    const val  = el.value.trim();
-    if (!val) { el.classList.remove("invalid"); hint.classList.remove("visible"); return; }
-    const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
-    el.classList.toggle("invalid", !ok);
-    hint.classList.toggle("visible", !ok);
-  });
-
 
   // ── FirebaseService ──────────────────────────────────────────────────
   // Responsibility: persist a guest data object to Firestore.
@@ -903,11 +1048,25 @@
       };
 
       // ── Sections
+      const pessoas = Array.isArray(data.pessoas) && data.pessoas.length
+        ? data.pessoas
+        : [{ nome: data.nome, cpf: data.cpf, contato: data.contato, email: data.email }];
+
       section("Dados Pessoais");
-      row("Nome",    data.nome);
-      row("CPF",     data.cpf);
-      row("Contato", data.contato);
-      if (data.email) row("E-mail", data.email);
+      pessoas.forEach((p, i) => {
+        if (pessoas.length > 1) {
+          doc.setFontSize(8);
+          doc.setFont("helvetica", "bold");
+          doc.setTextColor(...GRAY);
+          doc.text((i === 0 ? "Hóspede principal" : `Acompanhante ${i}`).toUpperCase(), PAD, y);
+          y += 7;
+        }
+        row("Nome",    p.nome);
+        row("CPF",     p.cpf);
+        if (p.contato) row("Contato", p.contato);
+        if (p.email)   row("E-mail",  p.email);
+        if (i < pessoas.length - 1) y += 3;
+      });
       y += 4;
 
       section("Estadia");
@@ -1019,20 +1178,25 @@
       if (error) { Toast.show(error, true); return; }
 
       _pendingData = data;
-      const cost = CostModel.compute(data);
-      const pessoas = Math.max(1, parseInt(data.numPessoas) || 1);
+      const cost    = CostModel.compute(data);
+      const pessoas = data.pessoas || [{ nome: data.nome }];
+      const nPessoas = pessoas.length;
 
-      const lines = [
-        ["Hóspede",        data.nome],
-        ["Tipo de reserva",`${data.tipoReserva} · ${pessoas} pessoa${pessoas > 1 ? "s" : ""}`],
-        ["Check-in",       _fmtDate(data.checkin)],
-        ["Check-out",      _fmtDate(data.checkout)],
-        ["Noites",         String(cost.nights)],
-        ["Modalidade",     data.modalidade],
-        ["Roupa de cama",  data.roupa ? "Sim" : "Não"],
-        ["Pagamento",      data.pagamento],
-        ["Responsável",    data.responsavel],
-      ];
+      const lines = [];
+      // List each person briefly
+      pessoas.forEach((p, i) => {
+        lines.push([ i === 0 ? "Hóspede principal" : `Acompanhante ${i}`, `${p.nome} · ${p.cpf}` ]);
+      });
+      lines.push(
+        ["Tipo de reserva", `${data.tipoReserva} · ${nPessoas} pessoa${nPessoas > 1 ? "s" : ""}`],
+        ["Check-in",        _fmtDate(data.checkin)],
+        ["Check-out",       _fmtDate(data.checkout)],
+        ["Noites",          String(cost.nights)],
+        ["Modalidade",      data.modalidade],
+        ["Roupa de cama",   data.roupa ? "Sim" : "Não"],
+        ["Pagamento",       data.pagamento],
+        ["Responsável",     data.responsavel],
+      );
       if (cost.discount > 0) {
         const dVal = parseFloat(String(data.descontoValor||"0").replace(",",".")) || 0;
         lines.push(["Desconto", data.descontoTipo === "percent" ? `${dVal}% = -${_fmt(cost.discount)}` : `-${_fmt(cost.discount)}`]);
@@ -1062,7 +1226,6 @@
       btn.disabled = true;
       btn.textContent = "Registrando…";
 
-      // ── Step 1: Save to Firestore
       try {
         await FirebaseService.save(data);
       } catch (e) {
@@ -1073,7 +1236,6 @@
         return;
       }
 
-      // ── Step 2: Send confirmation email (non-blocking)
       try {
         await EmailService.send(data);
         Toast.show("Hóspede registrado! Confirmação enviada por e-mail.");
@@ -1104,6 +1266,21 @@
           btn.textContent = "Gerar Ficha";
         }
       }, 50);
+    },
+
+    adicionarPessoa() {
+      PessoaManager.add();
+      // Sync num-pessoas display
+      const count = PessoaManager.container.querySelectorAll(".person-card").length;
+      document.getElementById("num-pessoas").value = count;
+      CostView.update(FormModel.read());
+    },
+
+    removerPessoa(btn) {
+      PessoaManager.remove(btn);
+      const count = PessoaManager.container.querySelectorAll(".person-card").length;
+      document.getElementById("num-pessoas").value = count;
+      CostView.update(FormModel.read());
     }
   };
 
@@ -1114,6 +1291,9 @@
 
   // Expose to global scope for inline onclick handlers
   window.App = App;
+
+  // Initialise dynamic person list
+  PessoaManager.init();
 
 </script>
 </body>
