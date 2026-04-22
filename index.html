@@ -400,7 +400,10 @@
     <div id="pessoas-container">
       <!-- Person cards injected by JS -->
     </div>
-    <button type="button" class="btn-add-person" onclick="App.adicionarPessoa()">+ Adicionar pessoa</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+      <button type="button" class="btn-add-person" id="btn-add-person" onclick="App.adicionarPessoa()" style="margin-top:0;flex:1">+ Adicionar pessoa</button>
+      <span id="pessoa-count-badge" style="font-size:0.78rem;font-weight:600;color:var(--red);background:var(--red-light);border:1.5px solid #ffcdd2;border-radius:20px;padding:3px 10px;white-space:nowrap;display:none;">1 pessoa</span>
+    </div>
 
     <p class="section-title">Tipo de Reserva</p>
 
@@ -605,12 +608,16 @@
         el.setSelectionRange(pos, pos);
       });
     },
-    cpf(raw) {
-      const d = raw.replace(/\D/g, "").slice(0, 11);
+    cpfCnpj(raw) {
+      const d = raw.replace(/\D/g, "").slice(0, 14);
       if (d.length <= 3) return d;
       if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`;
       if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
-      return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+      if (d.length <= 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+      // CNPJ: 00.000.000/0000-00
+      if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`;
+      if (d.length <= 13) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
+      return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12,14)}`;
     },
     phone(raw) {
       const d = raw.replace(/\D/g, "").slice(0, 11);
@@ -620,15 +627,15 @@
       return `(${d.slice(0,2)}) ${d.slice(2,split)}-${d.slice(split)}`;
     },
     applyToCard(card) {
-      this._apply(card.querySelector(".input-cpf"),     v => this.cpf(v));
+      this._apply(card.querySelector(".input-cpf"),     v => this.cpfCnpj(v));
       this._apply(card.querySelector(".input-contato"), v => this.phone(v));
     }
   };
 
-  // ── CPF Validator ────────────────────────────────────────────────────
-  const CPFValidator = {
-    validate(cpf) {
-      const d = cpf.replace(/\D/g, "");
+  // ── Document Validator (CPF + CNPJ) ─────────────────────────────────
+  const DocValidator = {
+    validateCPF(raw) {
+      const d = raw.replace(/\D/g, "");
       if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
       const calc = (len) => {
         let sum = 0;
@@ -637,12 +644,36 @@
         return r === 10 || r === 11 ? 0 : r;
       };
       return calc(9) === parseInt(d[9]) && calc(10) === parseInt(d[10]);
+    },
+    validateCNPJ(raw) {
+      const d = raw.replace(/\D/g, "");
+      if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+      const calc = (weights) => {
+        let sum = 0;
+        for (let i = 0; i < weights.length; i++) sum += parseInt(d[i]) * weights[i];
+        const r = sum % 11;
+        return r < 2 ? 0 : 11 - r;
+      };
+      const w1 = [5,4,3,2,9,8,7,6,5,4,3,2];
+      const w2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+      return calc(w1) === parseInt(d[12]) && calc(w2) === parseInt(d[13]);
+    },
+    validate(raw) {
+      const d = raw.replace(/\D/g, "");
+      if (d.length === 11) return this.validateCPF(raw);
+      if (d.length === 14) return this.validateCNPJ(raw);
+      return false;
+    },
+    // Returns "CPF", "CNPJ", or null based on digit count
+    type(raw) {
+      const d = raw.replace(/\D/g, "");
+      if (d.length === 11) return "CPF";
+      if (d.length === 14) return "CNPJ";
+      return null;
     }
   };
 
   // ── PessoaManager ─────────────────────────────────────────────────────
-  let _pessoaCount = 0;
-
   const PessoaManager = {
     container: null,
 
@@ -652,35 +683,35 @@
     },
 
     add() {
-      _pessoaCount++;
       const isFirst = this.container.children.length === 0;
       const idx     = this.container.children.length; // 0-based position
+      const uid     = `p${Date.now()}`; // unique prefix for label/input pairs
       const card    = document.createElement("div");
       card.className = "person-card";
       card.innerHTML = `
         <div class="person-card-header">
           <span class="person-card-title">${isFirst ? "Hóspede principal" : `Acompanhante ${idx}`}</span>
-          ${!isFirst ? `<button type="button" class="btn-remove-person" title="Remover" onclick="App.removerPessoa(this)">✕</button>` : ""}
+          ${!isFirst ? `<button type="button" class="btn-remove-person" title="Remover" aria-label="Remover acompanhante" onclick="App.removerPessoa(this)">✕</button>` : ""}
         </div>
         <div class="field">
-          <label>Nome completo <span style="color:var(--red)">*</span></label>
-          <input type="text" class="input-nome" placeholder="Nome completo">
+          <label for="${uid}-nome">Nome completo <span style="color:var(--red)">*</span></label>
+          <input type="text" id="${uid}-nome" class="input-nome" placeholder="Nome completo">
           <span class="field-hint hint-nome">Campo obrigatório</span>
         </div>
         <div class="row">
           <div class="field">
-            <label>CPF <span style="color:var(--red)">*</span></label>
-            <input type="text" class="input-cpf" placeholder="000.000.000-00">
-            <span class="field-hint hint-cpf">CPF inválido</span>
+            <label for="${uid}-cpf">CPF / CNPJ <span style="color:var(--red)">*</span></label>
+            <input type="text" id="${uid}-cpf" class="input-cpf" placeholder="000.000.000-00 ou 00.000.000/0000-00">
+            <span class="field-hint hint-cpf">Documento inválido</span>
           </div>
           <div class="field">
-            <label>Contato</label>
-            <input type="text" class="input-contato" placeholder="(00) 00000-0000">
+            <label for="${uid}-contato">Contato</label>
+            <input type="text" id="${uid}-contato" class="input-contato" placeholder="(00) 00000-0000">
           </div>
         </div>
         <div class="field">
-          <label>E-mail</label>
-          <input type="text" class="input-email" placeholder="hospede@exemplo.com">
+          <label for="${uid}-email">E-mail</label>
+          <input type="text" id="${uid}-email" class="input-email" placeholder="hospede@exemplo.com">
           <span class="field-hint hint-email">E-mail inválido</span>
         </div>
       `;
@@ -706,10 +737,14 @@
       cpfEl.addEventListener("blur", () => {
         const val = cpfEl.value.trim();
         if (!val) { cpfEl.classList.add("invalid"); hCpf.textContent = "Campo obrigatório"; hCpf.classList.add("visible"); return; }
-        const ok = CPFValidator.validate(val);
-        hCpf.textContent = "CPF inválido";
+        const ok  = DocValidator.validate(val);
+        const typ = DocValidator.type(val);
+        hCpf.textContent = typ ? `${typ} inválido` : "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos)";
         cpfEl.classList.toggle("invalid", !ok);
         hCpf.classList.toggle("visible", !ok);
+      });
+      cpfEl.addEventListener("input", () => {
+        if (DocValidator.validate(cpfEl.value.trim())) { cpfEl.classList.remove("invalid"); hCpf.classList.remove("visible"); }
       });
 
       const emailEl = card.querySelector(".input-email");
@@ -750,10 +785,22 @@
         const p = list[i];
         const who = i === 0 ? "do hóspede principal" : `do acompanhante ${i}`;
         if (!p.nome)                        return `Preencha o nome ${who}.`;
-        if (!p.cpf)                         return `Preencha o CPF ${who}.`;
-        if (!CPFValidator.validate(p.cpf))  return `O CPF ${who} é inválido.`;
+        if (!p.cpf)                         return `Preencha o CPF/CNPJ ${who}.`;
+        if (!DocValidator.validate(p.cpf))  return `O CPF/CNPJ ${who} é inválido.`;
         if (p.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email))
                                             return `O e-mail ${who} é inválido.`;
+      }
+      // Duplicate document check
+      const docs = list.map(p => p.cpf.replace(/\D/g, ""));
+      for (let i = 0; i < docs.length; i++) {
+        if (!docs[i]) continue;
+        for (let j = i + 1; j < docs.length; j++) {
+          if (docs[i] === docs[j]) {
+            const whoI = i === 0 ? "hóspede principal" : `acompanhante ${i}`;
+            const whoJ = j === 0 ? "hóspede principal" : `acompanhante ${j}`;
+            return `CPF/CNPJ duplicado: ${whoI} e ${whoJ} têm o mesmo documento.`;
+          }
+        }
       }
       return null;
     },
@@ -840,6 +887,21 @@
     });
   });
 
+  // Set checkout min to checkin + 1 day whenever checkin changes
+  document.getElementById("checkin").addEventListener("change", function() {
+    const coEl = document.getElementById("checkout");
+    if (!this.value) { coEl.removeAttribute("min"); return; }
+    const next = new Date(this.value);
+    next.setDate(next.getDate() + 1);
+    const minVal = next.toISOString().slice(0, 10);
+    coEl.setAttribute("min", minVal);
+    // If existing checkout is now invalid, clear it
+    if (coEl.value && coEl.value <= this.value) {
+      coEl.value = "";
+      CostView.update(FormModel.read());
+    }
+  });
+
   document.getElementById("num-pessoas").addEventListener("input", () => {
     CostView.update(FormModel.read());
   });
@@ -862,6 +924,27 @@
 
   document.getElementById("desconto-valor").addEventListener("input", () => {
     CostView.update(FormModel.read());
+  });
+
+  document.getElementById("desconto-valor").addEventListener("blur", function() {
+    const raw = this.value.replace(",", ".");
+    const n   = parseFloat(raw);
+    if (this.value.trim() !== "" && (isNaN(n) || n < 0)) {
+      this.classList.add("invalid");
+      // Reuse or create hint span
+      let hint = this.nextElementSibling;
+      if (!hint || !hint.classList.contains("field-hint")) {
+        hint = document.createElement("span");
+        hint.className = "field-hint";
+        this.parentNode.insertBefore(hint, this.nextSibling);
+      }
+      hint.textContent = "Informe um valor numérico válido (ex: 10 ou 25,00)";
+      hint.classList.add("visible");
+    } else {
+      this.classList.remove("invalid");
+      const hint = this.nextElementSibling;
+      if (hint && hint.classList.contains("field-hint")) hint.classList.remove("visible");
+    }
   });
 
 
@@ -903,7 +986,7 @@
       if (pessoaErr) return pessoaErr;
       if (!data.checkin)  return "Por favor, informe a data de check-in.";
       if (!data.checkout) return "Por favor, informe a data de check-out.";
-      if (data.checkout <= data.checkin)
+      if (new Date(data.checkout) <= new Date(data.checkin))
         return "O check-out deve ser pelo menos um dia após o check-in.";
       if (!data.responsavel) return "Por favor, informe o responsável pelo check-in.";
       return null;
@@ -1023,9 +1106,30 @@
       doc.text("Ficha de Hóspede", W / 2, 21, { align: "center" });
 
       let y = 42;
+      const PAGE_H   = 277; // leave 20mm margin at bottom
+      const HEADER_H = 30;  // height of the red header bar
+
+      // Start a new page and reset y, re-drawing the page header
+      const newPage = () => {
+        doc.addPage();
+        doc.setFillColor(...RED);
+        doc.rect(0, 0, W, HEADER_H, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(255, 255, 255);
+        doc.text("Hospedagem CELU", W / 2, 13, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.text("Ficha de Hóspede (cont.)", W / 2, 21, { align: "center" });
+        y = HEADER_H + 12;
+      };
+
+      // Guard: if adding `needed` mm would overflow, start a new page
+      const guard = (needed = 10) => { if (y + needed > PAGE_H) newPage(); };
 
       // ── Helpers
       const section = (title) => {
+        guard(16);
         doc.setFontSize(8);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(...GRAY);
@@ -1037,6 +1141,7 @@
       };
 
       const row = (label, value) => {
+        guard(10);
         doc.setFontSize(10);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(...GRAY);
@@ -1062,7 +1167,7 @@
           y += 7;
         }
         row("Nome",    p.nome);
-        row("CPF",     p.cpf);
+        row("CPF/CNPJ", p.cpf);
         if (p.contato) row("Contato", p.contato);
         if (p.email)   row("E-mail",  p.email);
         if (i < pessoas.length - 1) y += 3;
@@ -1118,13 +1223,18 @@
         doc.setFont("helvetica", "normal");
         doc.setTextColor(...BLACK);
         const lines = doc.splitTextToSize(data.obs, W - PAD * 2);
-        doc.text(lines, PAD, y);
-        y += lines.length * 6 + 4;
+        lines.forEach(line => {
+          guard(8);
+          doc.text(line, PAD, y);
+          y += 6;
+        });
+        y += 4;
       } else if (!data.responsavel) {
         row("", "Nenhuma observação.");
       }
 
       // ── Signature lines
+      guard(30);
       y += 14;
       doc.setDrawColor(...GRAY);
       doc.setLineWidth(0.3);
@@ -1145,7 +1255,9 @@
       );
 
       // ── Filename: ficha-<nome-slug>-<checkin>.pdf
-      const slug = (data.nome || "hospede")
+      const nGuests = Array.isArray(data.pessoas) ? data.pessoas.length : 1;
+      const baseName = nGuests > 1 ? `grupo-${nGuests}pessoas` : (data.nome || "hospede");
+      const slug = baseName
         .toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-z0-9]+/g, "-")
@@ -1248,6 +1360,7 @@
       FormModel.reset();
       btn.disabled = false;
       btn.textContent = "Registrar";
+      setTimeout(() => Toast.show("Formulário limpo — pronto para o próximo registro."), 3200);
     },
 
     gerarPDF() {
@@ -1268,18 +1381,27 @@
       }, 50);
     },
 
-    adicionarPessoa() {
-      PessoaManager.add();
-      // Sync num-pessoas display
+    _syncCount() {
       const count = PessoaManager.container.querySelectorAll(".person-card").length;
       document.getElementById("num-pessoas").value = count;
+      const badge = document.getElementById("pessoa-count-badge");
+      if (count > 1) {
+        badge.textContent = `${count} pessoas`;
+        badge.style.display = "";
+      } else {
+        badge.style.display = "none";
+      }
+    },
+
+    adicionarPessoa() {
+      PessoaManager.add();
+      this._syncCount();
       CostView.update(FormModel.read());
     },
 
     removerPessoa(btn) {
       PessoaManager.remove(btn);
-      const count = PessoaManager.container.querySelectorAll(".person-card").length;
-      document.getElementById("num-pessoas").value = count;
+      this._syncCount();
       CostView.update(FormModel.read());
     }
   };
