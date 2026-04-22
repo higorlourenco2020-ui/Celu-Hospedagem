@@ -626,9 +626,47 @@
       const split = d.length === 11 ? 7 : 6;
       return `(${d.slice(0,2)}) ${d.slice(2,split)}-${d.slice(split)}`;
     },
+    passport(raw) {
+      // Passports: uppercase alphanumeric, up to 20 chars
+      return raw.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20).toUpperCase();
+    },
     applyToCard(card) {
-      this._apply(card.querySelector(".input-cpf"),     v => this.cpfCnpj(v));
+      const cpfEl   = card.querySelector(".input-cpf");
+      const tipoEl  = card.querySelector(".input-doc-tipo");
+      const labelEl = card.querySelector(".label-cpf");
+      // Initial mask based on default (CPF)
+      cpfEl.dataset.mask = "cpfcnpj";
+      this._apply(cpfEl, v => {
+        const m = cpfEl.dataset.mask;
+        return m === "passport" ? InputMask.passport(v) : InputMask.cpfCnpj(v);
+      });
+      // Re-bind mask and update UI when doc type changes
+      tipoEl.addEventListener("change", () => {
+        InputMask.switchDocType(card);
+      });
       this._apply(card.querySelector(".input-contato"), v => this.phone(v));
+    },
+    switchDocType(card) {
+      const tipo    = card.querySelector(".input-doc-tipo").value;
+      const cpfEl   = card.querySelector(".input-cpf");
+      const labelEl = card.querySelector(".label-cpf");
+      const hintEl  = card.querySelector(".hint-cpf");
+      cpfEl.value = "";
+      cpfEl.classList.remove("invalid");
+      hintEl.classList.remove("visible");
+      if (tipo === "cpf") {
+        labelEl.innerHTML = 'CPF <span style="color:var(--red)">*</span>';
+        cpfEl.placeholder = "000.000.000-00";
+        cpfEl.dataset.mask = "cpfcnpj";
+      } else if (tipo === "cnpj") {
+        labelEl.innerHTML = 'CNPJ <span style="color:var(--red)">*</span>';
+        cpfEl.placeholder = "00.000.000/0000-00";
+        cpfEl.dataset.mask = "cpfcnpj";
+      } else {
+        labelEl.innerHTML = 'Passaporte <span style="color:var(--red)">*</span>';
+        cpfEl.placeholder = "Ex: AB123456";
+        cpfEl.dataset.mask = "passport";
+      }
     }
   };
 
@@ -700,14 +738,22 @@
         </div>
         <div class="row">
           <div class="field">
-            <label for="${uid}-cpf">CPF / CNPJ <span style="color:var(--red)">*</span></label>
-            <input type="text" id="${uid}-cpf" class="input-cpf" placeholder="000.000.000-00 ou 00.000.000/0000-00">
-            <span class="field-hint hint-cpf">Documento inválido</span>
+            <label for="${uid}-doc-tipo">Tipo de documento <span style="color:var(--red)">*</span></label>
+            <select id="${uid}-doc-tipo" class="input-doc-tipo">
+              <option value="cpf">CPF</option>
+              <option value="cnpj">CNPJ</option>
+              <option value="passaporte">Passaporte</option>
+            </select>
           </div>
           <div class="field">
             <label for="${uid}-contato">Contato</label>
             <input type="text" id="${uid}-contato" class="input-contato" placeholder="(00) 00000-0000">
           </div>
+        </div>
+        <div class="field">
+          <label for="${uid}-cpf" class="label-cpf">CPF <span style="color:var(--red)">*</span></label>
+          <input type="text" id="${uid}-cpf" class="input-cpf" placeholder="000.000.000-00">
+          <span class="field-hint hint-cpf">Documento inválido</span>
         </div>
         <div class="field">
           <label for="${uid}-email">E-mail</label>
@@ -732,19 +778,34 @@
         if (nomeEl.value.trim()) { nomeEl.classList.remove("invalid"); hNome.classList.remove("visible"); }
       });
 
-      const cpfEl = card.querySelector(".input-cpf");
-      const hCpf  = card.querySelector(".hint-cpf");
+      const cpfEl  = card.querySelector(".input-cpf");
+      const hCpf   = card.querySelector(".hint-cpf");
+      const tipoEl = card.querySelector(".input-doc-tipo");
       cpfEl.addEventListener("blur", () => {
-        const val = cpfEl.value.trim();
+        const val  = cpfEl.value.trim();
+        const tipo = tipoEl.value;
         if (!val) { cpfEl.classList.add("invalid"); hCpf.textContent = "Campo obrigatório"; hCpf.classList.add("visible"); return; }
-        const ok  = DocValidator.validate(val);
-        const typ = DocValidator.type(val);
-        hCpf.textContent = typ ? `${typ} inválido` : "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos)";
+        let ok = false;
+        if (tipo === "passaporte") {
+          ok = val.length >= 5;
+          hCpf.textContent = "Passaporte inválido (mínimo 5 caracteres)";
+        } else {
+          ok  = DocValidator.validate(val);
+          const detected = DocValidator.type(val);
+          if (!ok && detected && detected.toLowerCase() !== tipo) {
+            hCpf.textContent = `Formato incorreto para ${tipo.toUpperCase()} — confira os dígitos`;
+          } else {
+            hCpf.textContent = detected ? `${detected} inválido` : `Informe um ${tipo.toUpperCase()} válido`;
+          }
+        }
         cpfEl.classList.toggle("invalid", !ok);
         hCpf.classList.toggle("visible", !ok);
       });
       cpfEl.addEventListener("input", () => {
-        if (DocValidator.validate(cpfEl.value.trim())) { cpfEl.classList.remove("invalid"); hCpf.classList.remove("visible"); }
+        const tipo = tipoEl.value;
+        const val  = cpfEl.value.trim();
+        const ok   = tipo === "passaporte" ? val.length >= 5 : DocValidator.validate(val);
+        if (ok) { cpfEl.classList.remove("invalid"); hCpf.classList.remove("visible"); }
       });
 
       const emailEl = card.querySelector(".input-email");
@@ -772,10 +833,11 @@
 
     readAll() {
       return Array.from(this.container.querySelectorAll(".person-card")).map(card => ({
-        nome:    card.querySelector(".input-nome").value.trim(),
-        cpf:     card.querySelector(".input-cpf").value.trim(),
-        contato: card.querySelector(".input-contato").value.trim(),
-        email:   card.querySelector(".input-email").value.trim(),
+        nome:     card.querySelector(".input-nome").value.trim(),
+        docTipo:  card.querySelector(".input-doc-tipo").value,
+        cpf:      card.querySelector(".input-cpf").value.trim(),
+        contato:  card.querySelector(".input-contato").value.trim(),
+        email:    card.querySelector(".input-email").value.trim(),
       }));
     },
 
@@ -785,13 +847,17 @@
         const p = list[i];
         const who = i === 0 ? "do hóspede principal" : `do acompanhante ${i}`;
         if (!p.nome)                        return `Preencha o nome ${who}.`;
-        if (!p.cpf)                         return `Preencha o CPF/CNPJ ${who}.`;
-        if (!DocValidator.validate(p.cpf))  return `O CPF/CNPJ ${who} é inválido.`;
+        if (!p.cpf) return `Preencha o documento (${(p.docTipo||"cpf").toUpperCase()}) ${who}.`;
+        if (p.docTipo === "passaporte") {
+          if (p.cpf.length < 5) return `O passaporte ${who} é inválido.`;
+        } else if (!DocValidator.validate(p.cpf)) {
+          return `O ${(p.docTipo||"cpf").toUpperCase()} ${who} é inválido.`;
+        }
         if (p.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email))
                                             return `O e-mail ${who} é inválido.`;
       }
       // Duplicate document check
-      const docs = list.map(p => p.cpf.replace(/\D/g, ""));
+      const docs = list.map(p => p.docTipo === 'passaporte' ? p.cpf.toUpperCase() : p.cpf.replace(/\D/g, ""));
       for (let i = 0; i < docs.length; i++) {
         if (!docs[i]) continue;
         for (let j = i + 1; j < docs.length; j++) {
@@ -811,7 +877,10 @@
       const first = this.container.querySelector(".person-card");
       if (first) {
         first.querySelectorAll("input").forEach(el => { el.value = ""; el.classList.remove("invalid"); });
+        first.querySelectorAll("select.input-doc-tipo").forEach(el => { el.selectedIndex = 0; });
         first.querySelectorAll(".field-hint").forEach(el => el.classList.remove("visible"));
+        // Reset label and placeholder back to CPF defaults
+        InputMask.switchDocType(first);
       }
     }
   };
@@ -1167,7 +1236,8 @@
           y += 7;
         }
         row("Nome",    p.nome);
-        row("CPF/CNPJ", p.cpf);
+        const docLabel = p.docTipo === "passaporte" ? "Passaporte" : p.docTipo === "cnpj" ? "CNPJ" : "CPF";
+        row(docLabel, p.cpf);
         if (p.contato) row("Contato", p.contato);
         if (p.email)   row("E-mail",  p.email);
         if (i < pessoas.length - 1) y += 3;
